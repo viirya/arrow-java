@@ -122,14 +122,23 @@ public class VectorLoader {
         (int) (variadicBufferLayoutCount + TypeLayout.getTypeBufferCount(field.getType()));
     List<ArrowBuf> ownBuffers = new ArrayList<>(bufferLayoutCount);
     for (int j = 0; j < bufferLayoutCount; j++) {
-      ArrowBuf nextBuf = buffers.next();
-      // for vectors without nulls, the buffer is empty, so there is no need to decompress it.
-      ArrowBuf bufferToAdd =
-          nextBuf.writerIndex() > 0 ? codec.decompress(vector.getAllocator(), nextBuf) : nextBuf;
-      ownBuffers.add(bufferToAdd);
-      if (decompressionNeeded) {
-        // decompression performed
-        nextBuf.getReferenceManager().retain();
+      if (buffers.hasNext()) {
+        ArrowBuf nextBuf = buffers.next();
+        // for vectors without nulls, the buffer is empty, so there is no need to decompress it.
+        ArrowBuf bufferToAdd =
+                nextBuf.writerIndex() > 0 ? codec.decompress(vector.getAllocator(), nextBuf) : nextBuf;
+        ownBuffers.add(bufferToAdd);
+        if (decompressionNeeded) {
+          // decompression performed
+          nextBuf.getReferenceManager().retain();
+        }
+      } else if (fieldNode.getNullCount() == 0) {
+        // for vectors having a 0 null count, it may choose to not allocate the validity buffer.
+        // see https://arrow.apache.org/docs/format/Columnar.html#validity-bitmaps.
+        ownBuffers.add(null);
+      } else {
+        throw new IllegalArgumentException(
+            "no more buffers for field " + field + ". expected: " + bufferLayoutCount);
       }
     }
     try {
